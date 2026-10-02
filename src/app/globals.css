@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #111118;
+  --bg-card: #16161f;
+  --text-primary: #f0f0f5;
+  --text-secondary: #8888a0;
+  --accent: #0c93e7;
+  --accent-glow: rgba(12, 147, 231, 0.3);
+  --border: rgba(255, 255, 255, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+@layer utilities {
+  .glass {
+    background: rgba(22, 22, 31, 0.8);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+  }
+
+  .glass-hover:hover {
+    background: rgba(22, 22, 31, 0.95);
+    border-color: rgba(12, 147, 231, 0.3);
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, #0c93e7 0%, #a855f7 50%, #ec4899 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-border {
+    border-image: linear-gradient(135deg, #0c93e7, #a855f7) 1;
+  }
+
+  .emotion-glow {
+    box-shadow: 0 0 30px var(--accent-glow);
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+  }
+}
+
+@keyframes gradient-shift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 8s ease infinite;
+}
+
+.grid-bg {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(255, 255, 255, 0.03) 1px,
+    transparent 0
+  );
+  background-size: 40px 40px;
+}
