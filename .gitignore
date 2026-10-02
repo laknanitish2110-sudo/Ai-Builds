@@ -5,3 +5,16 @@ out/
 .env.local
 *.tsbuildinfo
 next-env.d.ts
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Model artifacts (train locally, don't commit large binaries)
+sensai-model/checkpoints/*.pt
+sensai-model/export/*.onnx
+sensai-model/export/*.onnx.data
