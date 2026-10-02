@@ -96,66 +96,220 @@ export function getTopicList() {
   }));
 }
 
+export function getTopicTitle(topicId: string): string {
+  return TOPICS[topicId]?.title ?? "General";
+}
+
+export function getLessonTitle(topicId: string, lessonIndex: number): string {
+  const topic = TOPICS[topicId] || TOPICS.python;
+  const lesson = topic.lessons[lessonIndex] || topic.lessons[0];
+  return lesson.title;
+}
+
+export async function generateAIResponse(
+  topicId: string,
+  lessonIndex: number,
+  state: LearningState,
+  userMessage: string,
+  conversationHistory: { role: string; content: string }[]
+): Promise<{ content: string; fromAI: boolean }> {
+  const topic = TOPICS[topicId] || TOPICS.python;
+  const lesson = topic.lessons[lessonIndex] || topic.lessons[0];
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: userMessage,
+        topic: topic.title,
+        lessonTitle: lesson.title,
+        learningState: state,
+        agentName: AGENT_NAMES[topicId] || "SensAI",
+        conversationHistory,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (data.fallback || data.error) {
+      return {
+        content: generateLocalResponse(topicId, lessonIndex, state, userMessage),
+        fromAI: false,
+      };
+    }
+
+    return { content: data.content, fromAI: true };
+  } catch {
+    return {
+      content: generateLocalResponse(topicId, lessonIndex, state, userMessage),
+      fromAI: false,
+    };
+  }
+}
+
+function generateLocalResponse(
+  topicId: string,
+  lessonIndex: number,
+  state: LearningState,
+  userMessage: string
+): string {
+  const topic = TOPICS[topicId] || TOPICS.python;
+  const lesson = topic.lessons[lessonIndex] || topic.lessons[0];
+  const lower = userMessage.toLowerCase().trim();
+
+  if (lower === "next" || lower === "continue" || lower === "next lesson") {
+    const nextLesson = topic.lessons[lessonIndex + 1];
+    if (nextLesson) {
+      return `Great, let's move on to **${nextLesson.title}**!\n\n${nextLesson.normal}`;
+    }
+    return `You've completed all available lessons in ${topic.title}! 🎉\n\nWant to review any topic? Just ask a question about anything we covered.`;
+  }
+
+  const mathResult = tryMathEval(userMessage);
+  if (mathResult !== null) {
+    return mathResult;
+  }
+
+  if (isQuestion(lower)) {
+    return answerFromContext(lower, lesson, topic.title, state);
+  }
+
+  return getLessonContent(lesson, state);
+}
+
+function isQuestion(text: string): boolean {
+  return (
+    text.includes("?") ||
+    /^(what|how|why|when|where|who|which|can|do|does|is|are|was|were|explain|tell|show|help|define)\b/.test(
+      text
+    )
+  );
+}
+
+function tryMathEval(input: string): string | null {
+  let expr = input
+    .toLowerCase()
+    .replace(/what'?s?\s*/gi, "")
+    .replace(/whats\s*/gi, "")
+    .replace(/calculate\s*/gi, "")
+    .replace(/solve\s*/gi, "")
+    .replace(/\?/g, "")
+    .replace(/divided\s*by/gi, "/")
+    .replace(/multiplied\s*by/gi, "*")
+    .replace(/times/gi, "*")
+    .replace(/plus/gi, "+")
+    .replace(/minus/gi, "-")
+    .replace(/mod(ulo)?/gi, "%")
+    .replace(/\^/g, "**")
+    .replace(/x/gi, "*")
+    .replace(/={1,2}/g, "")
+    .trim();
+
+  if (!/^[\d\s+\-*/().%*]+$/.test(expr)) return null;
+  if (!/\d/.test(expr)) return null;
+
+  try {
+    const fn = new Function(`"use strict"; return (${expr});`);
+    const result = fn();
+    if (typeof result !== "number" || !isFinite(result)) return null;
+
+    const display = Number.isInteger(result)
+      ? result.toString()
+      : result.toFixed(6).replace(/\.?0+$/, "");
+
+    return `**${expr.trim()} = ${display}**\n\nHere's the breakdown:\n- Expression: \`${expr.trim()}\`\n- Result: **${display}**`;
+  } catch {
+    return null;
+  }
+}
+
+function answerFromContext(
+  question: string,
+  lesson: LessonContent,
+  topicTitle: string,
+  state: LearningState
+): string {
+  const statePrefix = getStatePrefix(state);
+
+  const keywords = question.split(/\s+/).filter((w) => w.length > 3);
+  const allContent = `${lesson.simple} ${lesson.normal} ${lesson.deep}`;
+  const relevantSentences = allContent
+    .split(/\.\s+/)
+    .filter((s) => keywords.some((k) => s.toLowerCase().includes(k)))
+    .slice(0, 3);
+
+  if (relevantSentences.length > 0) {
+    return `${statePrefix}${relevantSentences.join(". ")}.\n\n${lesson.visual ? `**Visual:**\n${lesson.visual}` : ""}`;
+  }
+
+  return `${statePrefix}That's a great question! It's related to our **${topicTitle}** topic.\n\nHere's what I can share about **${lesson.title}**:\n\n${state === "confused" || state === "struggling" ? lesson.simple : lesson.normal}\n\n💡 *For a smarter AI tutor that answers any question, ask your teacher to add the ANTHROPIC_API_KEY in the Vercel settings.*`;
+}
+
+function getStatePrefix(state: LearningState): string {
+  switch (state) {
+    case "confused":
+      return "Let me break this down simply. ";
+    case "frustrated":
+      return "No worries, let's take it step by step. ";
+    case "excited":
+      return "Love the energy! ";
+    case "bored":
+      return "Let's make this more interesting. ";
+    case "struggling":
+      return "You're doing great, let's work through this together. ";
+    default:
+      return "";
+  }
+}
+
+function getLessonContent(
+  lesson: LessonContent,
+  state: LearningState
+): string {
+  const prefix = getStatePrefix(state);
+  switch (state) {
+    case "confused":
+    case "struggling":
+      return `${prefix}${lesson.simple}\n\n**Visual:**\n${lesson.visual}`;
+    case "excited":
+    case "bored":
+      return `${prefix}${lesson.deep}\n\n**Try this:** ${lesson.exercise}`;
+    default:
+      return `${prefix}${lesson.normal}`;
+  }
+}
+
 export function generateTutorResponse(
   topicId: string,
   lessonIndex: number,
   state: LearningState,
-  adaptation: TutorAdaptation,
+  _adaptation: TutorAdaptation,
   userMessage: string
 ): ChatMessage {
-  const topic = TOPICS[topicId] || TOPICS.python;
-  const lesson =
-    topic.lessons[lessonIndex] || topic.lessons[0];
-
-  let content = "";
-
-  if (adaptation.message) {
-    content += adaptation.message + "\n\n";
-  }
-
-  switch (adaptation.complexity) {
-    case "simpler":
-      content += lesson.simple;
-      break;
-    case "deeper":
-      content += lesson.deep;
-      break;
-    default:
-      content += lesson.normal;
-  }
-
-  if (adaptation.format === "visual") {
-    content += "\n\n**Visual breakdown:**\n" + lesson.visual;
-  }
-
-  if (
-    adaptation.format === "interactive" ||
-    state === "bored"
-  ) {
-    content += "\n\n**Try this:** " + lesson.exercise;
-  }
-
-  if (adaptation.shouldBreak) {
-    content +=
-      "\n\n💡 *Take a 30-second breather if you need it. There's no rush.*";
-  }
-
+  const content = generateLocalResponse(topicId, lessonIndex, state, userMessage);
   return {
     id: crypto.randomUUID(),
     role: "tutor",
     content,
     timestamp: Date.now(),
     emotionContext: state,
-    adaptation,
   };
 }
 
+const AGENT_NAMES: Record<string, string> = {
+  python: "Py",
+  ai: "Nova",
+  math: "Euler",
+};
+
 export function getWelcomeMessage(topicId: string): ChatMessage {
   const topic = TOPICS[topicId] || TOPICS.python;
+  const agentName = AGENT_NAMES[topicId] || "SensAI";
   return {
     id: crypto.randomUUID(),
     role: "tutor",
-    content: `Welcome to **${topic.title}**! I'm your SensAI tutor.\n\nI'll be watching your facial expressions through the camera to understand how you're feeling. If you look confused, I'll simplify. If you're bored, I'll challenge you more. If you're frustrated, I'll slow down and encourage you.\n\nReady? Let's start with **${topic.lessons[0].title}**.`,
+    content: `Hey! I'm **${agentName}**, your ${topic.title} tutor.\n\nI'll be watching your facial expressions through the camera to understand how you're feeling. If you look confused, I'll simplify. If you're bored, I'll challenge you more. If you're frustrated, I'll slow down and encourage you.\n\nAsk me anything — I'm here to help. Let's start with **${topic.lessons[0].title}**.`,
     timestamp: Date.now(),
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import EmotionDetector from "@/components/EmotionDetector";
 import AITutor from "@/components/AITutor";
 import EmotionTimeline from "@/components/EmotionTimeline";
@@ -10,10 +10,22 @@ import {
   generateEmotionInsight,
 } from "@/lib/emotionEngine";
 import {
+  generateAIResponse,
   generateTutorResponse,
+  getLessonTitle,
   getTopicList,
+  getTopicTitle,
   getWelcomeMessage,
 } from "@/lib/tutorAdapter";
+import {
+  buildRecallContext,
+  saveSession,
+  getLastSessionForTopic,
+  savePlan,
+  getActivePlan,
+  updateEmotionPatterns,
+} from "@/lib/memory";
+import type { SessionRecord } from "@/lib/memory";
 import type {
   ChatMessage,
   LearningState,
@@ -28,6 +40,27 @@ const TOPIC_ICONS: Record<string, string> = {
   math: "📐",
 };
 
+const TUTOR_AGENTS: Record<string, { name: string; emoji: string; gradient: string; tagline: string }> = {
+  python: {
+    name: "Py",
+    emoji: "🐍",
+    gradient: "from-green-500 to-emerald-600",
+    tagline: "Your Python guide",
+  },
+  ai: {
+    name: "Nova",
+    emoji: "✨",
+    gradient: "from-violet-500 to-fuchsia-500",
+    tagline: "Your AI explorer",
+  },
+  math: {
+    name: "Euler",
+    emoji: "📐",
+    gradient: "from-blue-500 to-cyan-500",
+    tagline: "Your math mentor",
+  },
+};
+
 export default function LearnPage() {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [lessonIndex, setLessonIndex] = useState(0);
@@ -35,6 +68,10 @@ export default function LearnPage() {
   const [learningState, setLearningState] = useState<LearningState>("neutral");
   const [stateHistory, setStateHistory] = useState<LearningStateReading[]>([]);
   const [isThinking, setIsThinking] = useState(false);
+  const sessionRef = useRef<SessionRecord | null>(null);
+  const sessionStartRef = useRef<number>(Date.now());
+
+  const recall = useMemo(() => buildRecallContext(), []);
 
   const {
     videoRef,
@@ -56,15 +93,90 @@ export default function LearnPage() {
     setStateHistory((prev) => [...prev.slice(-100), stateReading]);
   }, [emotionHistory]);
 
+  useEffect(() => {
+    if (!selectedTopic || !sessionRef.current) return;
+
+    const save = () => {
+      if (!sessionRef.current) return;
+      const now = Date.now();
+      sessionRef.current.endedAt = now;
+      sessionRef.current.durationMinutes = Math.round(
+        (now - sessionStartRef.current) / 60000
+      );
+      sessionRef.current.messagesCount = messages.filter(
+        (m) => m.role === "user"
+      ).length;
+      sessionRef.current.lessonIndex = lessonIndex;
+
+      const stateCounts: Record<string, number> = {};
+      stateHistory.forEach((s) => {
+        stateCounts[s.state] = (stateCounts[s.state] || 0) + 1;
+      });
+      const dominant =
+        Object.entries(stateCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+        "neutral";
+      const focusCount = (stateCounts["focused"] || 0) + (stateCounts["excited"] || 0);
+      const focusRate = stateHistory.length > 0 ? focusCount / stateHistory.length : 0;
+
+      sessionRef.current.emotionSummary = {
+        dominantState: dominant,
+        focusRate,
+        stateBreakdown: stateCounts,
+      };
+
+      saveSession(sessionRef.current);
+      updateEmotionPatterns(dominant, focusRate);
+    };
+
+    window.addEventListener("beforeunload", save);
+    return () => {
+      save();
+      window.removeEventListener("beforeunload", save);
+    };
+  }, [selectedTopic, messages, lessonIndex, stateHistory]);
+
   const selectTopic = useCallback((topicId: string) => {
     setSelectedTopic(topicId);
-    setLessonIndex(0);
-    const welcome = getWelcomeMessage(topicId);
-    setMessages([welcome]);
-  }, []);
+
+    const lastSession = getLastSessionForTopic(topicId);
+    const startLesson = lastSession ? lastSession.lessonIndex : 0;
+    setLessonIndex(startLesson);
+
+    sessionStartRef.current = Date.now();
+    sessionRef.current = {
+      id: crypto.randomUUID(),
+      topicId,
+      lessonIndex: startLesson,
+      startedAt: Date.now(),
+      endedAt: null,
+      durationMinutes: 0,
+      messagesCount: 0,
+      emotionSummary: { dominantState: "neutral", focusRate: 0, stateBreakdown: {} },
+      conceptsCovered: [getLessonTitle(topicId, startLesson)],
+      struggles: [],
+      plan: getActivePlan(),
+      lastMessage: "",
+    };
+
+    const welcomeMessages: ChatMessage[] = [];
+
+    if (lastSession) {
+      const recallMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "system",
+        content: `Resuming from your last session — you were on **${getLessonTitle(topicId, lastSession.lessonIndex)}** (Lesson ${lastSession.lessonIndex + 1}). ${lastSession.struggles.length > 0 ? `You were working through: ${lastSession.struggles.join(", ")}.` : ""} Let's keep going!`,
+        timestamp: Date.now(),
+      };
+      welcomeMessages.push(recallMsg);
+    }
+
+    welcomeMessages.push(getWelcomeMessage(topicId));
+    setMessages(welcomeMessages);
+    startDetection();
+  }, [startDetection]);
 
   const handleSendMessage = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (!selectedTopic) return;
 
       const userMsg: ChatMessage = {
@@ -82,10 +194,55 @@ export default function LearnPage() {
       if (lower === "next" || lower === "continue" || lower === "next lesson") {
         nextLessonIndex = lessonIndex + 1;
         setLessonIndex(nextLessonIndex);
+        if (sessionRef.current) {
+          sessionRef.current.conceptsCovered.push(
+            getLessonTitle(selectedTopic, nextLessonIndex)
+          );
+        }
       }
 
-      setTimeout(() => {
-        const stateReading = mapEmotionToLearningState(emotionHistory);
+      if (
+        lower.includes("plan") &&
+        (lower.includes("tomorrow") || lower.includes("next session") || lower.includes("next time"))
+      ) {
+        const goals = text.replace(/plan\s*(for\s*)?(tomorrow|next\s*session|next\s*time)/gi, "").trim();
+        savePlan({
+          createdAt: Date.now(),
+          targetDate: null,
+          goals: goals ? [goals] : ["Continue from current lesson"],
+          topicId: selectedTopic,
+          lessonIndex: nextLessonIndex,
+          notes: "",
+        });
+      }
+
+      if (sessionRef.current) {
+        sessionRef.current.lastMessage = text;
+      }
+
+      const stateReading = mapEmotionToLearningState(emotionHistory);
+      const history = messages
+        .filter((m) => m.role === "user" || m.role === "tutor")
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      try {
+        const { content } = await generateAIResponse(
+          selectedTopic,
+          nextLessonIndex,
+          stateReading.state,
+          text,
+          history
+        );
+
+        const response: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "tutor",
+          content,
+          timestamp: Date.now(),
+          emotionContext: stateReading.state,
+        };
+        setMessages((prev) => [...prev, response]);
+      } catch {
         const response = generateTutorResponse(
           selectedTopic,
           nextLessonIndex,
@@ -94,10 +251,10 @@ export default function LearnPage() {
           text
         );
         setMessages((prev) => [...prev, response]);
-        setIsThinking(false);
-      }, 800 + Math.random() * 1200);
+      }
+      setIsThinking(false);
     },
-    [selectedTopic, lessonIndex, emotionHistory]
+    [selectedTopic, lessonIndex, emotionHistory, messages]
   );
 
   const insight = useMemo(
@@ -123,30 +280,54 @@ export default function LearnPage() {
           <div className="max-w-2xl w-full space-y-8">
             <div className="text-center space-y-4">
               <h1 className="text-3xl sm:text-4xl font-bold">
-                What do you want to{" "}
-                <span className="gradient-text">learn</span>?
+                {recall.isReturningUser ? (
+                  <>Welcome <span className="gradient-text">back</span>!</>
+                ) : (
+                  <>What do you want to <span className="gradient-text">learn</span>?</>
+                )}
               </h1>
-              <p className="text-gray-400">
-                Choose a topic and your emotion-aware AI tutor will guide you
-              </p>
+              {recall.isReturningUser ? (
+                <div className="space-y-2">
+                  <p className="text-gray-400">{recall.welcomeMessage}</p>
+                  <div className="flex items-center justify-center gap-4 text-xs text-gray-500">
+                    <span>{recall.sessionCount} sessions</span>
+                    <span className="w-1 h-1 rounded-full bg-gray-600" />
+                    <span>{recall.totalMinutes}m total</span>
+                    <span className="w-1 h-1 rounded-full bg-gray-600" />
+                    <span>Last: {recall.timeSinceLastSession}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-400">
+                  Choose a topic and your emotion-aware AI tutor will guide you
+                </p>
+              )}
             </div>
 
             <div className="grid sm:grid-cols-3 gap-4">
-              {TOPICS.map((topic) => (
-                <button
-                  key={topic.id}
-                  onClick={() => selectTopic(topic.id)}
-                  className="glass glass-hover rounded-2xl p-6 text-left space-y-3 transition-all hover:scale-105"
-                >
-                  <span className="text-4xl">
-                    {TOPIC_ICONS[topic.id] || "📚"}
-                  </span>
-                  <h3 className="text-lg font-semibold">{topic.title}</h3>
-                  <p className="text-xs text-gray-500">
-                    {topic.lessonCount} lessons
-                  </p>
-                </button>
-              ))}
+              {TOPICS.map((topic) => {
+                const agent = TUTOR_AGENTS[topic.id];
+                return (
+                  <button
+                    key={topic.id}
+                    onClick={() => selectTopic(topic.id)}
+                    className="glass glass-hover rounded-2xl p-6 text-left space-y-3 transition-all hover:scale-105"
+                  >
+                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${agent?.gradient || "from-sensai-500 to-purple-500"} flex items-center justify-center`}>
+                      <span className="text-2xl">{agent?.emoji || TOPIC_ICONS[topic.id] || "📚"}</span>
+                    </div>
+                    <h3 className="text-lg font-semibold">{topic.title}</h3>
+                    {agent && (
+                      <p className="text-xs text-sensai-400 font-medium">
+                        Agent {agent.name} — {agent.tagline}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-500">
+                      {topic.lessonCount} lessons
+                    </p>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="text-center">
@@ -222,6 +403,7 @@ export default function LearnPage() {
             learningState={learningState}
             onSendMessage={handleSendMessage}
             isThinking={isThinking}
+            agent={selectedTopic ? TUTOR_AGENTS[selectedTopic] : undefined}
           />
         </div>
 
