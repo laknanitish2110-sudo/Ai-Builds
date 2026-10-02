@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Train SensAI emotion model.
+Train SensAI emotion model v2.
 
 Mode 1 (cloud/demo): Uses procedurally generated faces with emotion features
 Mode 2 (local):      Uses real FER2013 from HuggingFace
+Mode 3 (csv):        Uses FER2013 CSV file
 
 Usage:
     python train_real.py                                          # mode 1
     python train_real.py --fer2013                                # mode 2 (needs internet)
-    python train_real.py --fer2013-csv path/to/fer2013.csv        # mode 2 from CSV
+    python train_real.py --fer2013-csv path/to/fer2013.csv        # mode 3 from CSV
 """
 
 import argparse
@@ -47,14 +48,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class SyntheticFaceDataset(Dataset):
-    """
-    Procedurally generated face-like images with emotion-specific features.
-
-    Each face is built from scratch using geometric primitives that model
-    facial landmarks (eyes, brows, mouth, nose). Emotion transforms change
-    the geometry to produce distinguishable patterns the CNN can learn.
-    No external download required — runs fully offline.
-    """
+    """Procedurally generated face-like images with emotion-specific features."""
 
     def __init__(self, num_samples_per_class=1500, transform=None):
         self.transform = transform
@@ -92,75 +86,51 @@ class SyntheticFaceDataset(Dataset):
 
     def _generate_face(self, emotion, rng):
         size = 64
-        face = np.full((size, size), 30, dtype=np.float64)  # dark background
-
-        # face oval
+        face = np.full((size, size), 30, dtype=np.float64)
         self._draw_ellipse(face, 32, 32, 26, 20, 160 + rng.uniform(-15, 15), rng)
-
-        # per-face variation
         face_bright = rng.uniform(-10, 10)
         eye_y = 24 + rng.randint(-2, 3)
         mouth_y = 44 + rng.randint(-2, 3)
 
-        if emotion == 0:  # angry — V brows, narrow eyes, tight mouth
+        if emotion == 0:  # angry
             brow_angle = rng.uniform(2, 4)
-            # left brow (angled down-in)
             self._draw_line(face, int(eye_y - 6 + brow_angle), 16, int(eye_y - 6 - brow_angle), 26, 1, 80)
-            # right brow (angled down-in)
             self._draw_line(face, int(eye_y - 6 - brow_angle), 38, int(eye_y - 6 + brow_angle), 48, 1, 80)
-            # narrow eyes
             self._draw_ellipse(face, eye_y, 22, 2, 4, 60, rng)
             self._draw_ellipse(face, eye_y, 42, 2, 4, 60, rng)
-            # tight mouth
             self._draw_ellipse(face, mouth_y, 32, 1, 7, 100, rng)
-            # vertical wrinkle between brows
             self._draw_line(face, eye_y - 8, 32, eye_y - 3, 32, 0, 110)
             face_bright -= 15
-
-        elif emotion == 1:  # disgusted — raised upper lip, scrunched nose
-            # flat brows
+        elif emotion == 1:  # disgusted
             self._draw_line(face, eye_y - 6, 16, eye_y - 5, 26, 1, 110)
             self._draw_line(face, eye_y - 5, 38, eye_y - 6, 48, 1, 110)
-            # squinted eyes
             self._draw_ellipse(face, eye_y, 22, 2, 5, 70, rng)
             self._draw_ellipse(face, eye_y, 42, 2, 5, 70, rng)
-            # wrinkled nose
             self._draw_ellipse(face, 33, 32, 3, 3, 120, rng)
             self._draw_line(face, 31, 29, 33, 29, 0, 100)
             self._draw_line(face, 31, 35, 33, 35, 0, 100)
-            # asymmetric raised lip
             self._draw_line(face, mouth_y - 1, 25, mouth_y + 1, 32, 1, 90)
             self._draw_line(face, mouth_y + 1, 32, mouth_y, 39, 1, 90)
             face_bright -= 8
-
-        elif emotion == 2:  # fearful — raised brows, wide eyes, open mouth
-            # high raised brows
+        elif emotion == 2:  # fearful
             self._draw_line(face, eye_y - 9, 16, eye_y - 10, 26, 1, 120)
             self._draw_line(face, eye_y - 10, 38, eye_y - 9, 48, 1, 120)
-            # wide open eyes
             self._draw_ellipse(face, eye_y, 22, 5, 5, 220, rng)
             self._draw_ellipse(face, eye_y, 42, 5, 5, 220, rng)
-            # pupils
             self._draw_ellipse(face, eye_y, 22, 2, 2, 40, rng)
             self._draw_ellipse(face, eye_y, 42, 2, 2, 40, rng)
-            # open mouth
             self._draw_ellipse(face, mouth_y, 32, 4, 5, 80, rng)
-            # forehead wrinkles
             for wy in range(eye_y - 14, eye_y - 10, 2):
                 self._draw_line(face, wy, 22, wy, 42, 0, 130)
-
-        elif emotion == 3:  # happy — arched brows, crescent eyes, wide smile
-            # gently arched brows
+        elif emotion == 3:  # happy
             self._draw_line(face, eye_y - 7, 16, eye_y - 8, 22, 1, 130)
             self._draw_line(face, eye_y - 8, 22, eye_y - 7, 28, 1, 130)
             self._draw_line(face, eye_y - 7, 36, eye_y - 8, 42, 1, 130)
             self._draw_line(face, eye_y - 8, 42, eye_y - 7, 48, 1, 130)
-            # crescent eyes (squished from smiling)
             self._draw_ellipse(face, eye_y, 22, 2, 5, 200, rng)
-            self._draw_ellipse(face, eye_y + 1, 22, 2, 5, 160, rng)  # lower lid pushes up
+            self._draw_ellipse(face, eye_y + 1, 22, 2, 5, 160, rng)
             self._draw_ellipse(face, eye_y, 42, 2, 5, 200, rng)
             self._draw_ellipse(face, eye_y + 1, 42, 2, 5, 160, rng)
-            # wide curved smile
             for dx in range(-9, 10):
                 dy = int(abs(dx) * 0.3)
                 sx, sy = 32 + dx, mouth_y + dy
@@ -168,22 +138,16 @@ class SyntheticFaceDataset(Dataset):
                     face[sy, sx] = 90
                     if sy + 1 < 64:
                         face[sy + 1, sx] = 90
-            # cheek bumps
             self._draw_ellipse(face, 36, 16, 4, 4, 175, rng)
             self._draw_ellipse(face, 36, 48, 4, 4, 175, rng)
             face_bright += 10
-
-        elif emotion == 4:  # sad — inner brow raise, droopy eyes, down mouth
-            # inner brow raise
+        elif emotion == 4:  # sad
             self._draw_line(face, eye_y - 8, 18, eye_y - 5, 26, 1, 120)
             self._draw_line(face, eye_y - 5, 38, eye_y - 8, 46, 1, 120)
-            # droopy eyes
             self._draw_ellipse(face, eye_y, 22, 3, 5, 180, rng)
             self._draw_ellipse(face, eye_y, 42, 3, 5, 180, rng)
-            # pupils looking down
             self._draw_ellipse(face, eye_y + 1, 22, 2, 2, 50, rng)
             self._draw_ellipse(face, eye_y + 1, 42, 2, 2, 50, rng)
-            # down-turned mouth
             for dx in range(-7, 8):
                 dy = int(abs(dx) * 0.35)
                 sx, sy = 32 + dx, mouth_y - dy
@@ -192,39 +156,28 @@ class SyntheticFaceDataset(Dataset):
                     if sy + 1 < 64:
                         face[sy + 1, sx] = 100
             face_bright -= 12
-
-        elif emotion == 5:  # surprised — high brows, round eyes, O mouth
-            # very high arched brows
+        elif emotion == 5:  # surprised
             self._draw_line(face, eye_y - 11, 16, eye_y - 13, 22, 1, 130)
             self._draw_line(face, eye_y - 13, 22, eye_y - 11, 28, 1, 130)
             self._draw_line(face, eye_y - 11, 36, eye_y - 13, 42, 1, 130)
             self._draw_line(face, eye_y - 13, 42, eye_y - 11, 48, 1, 130)
-            # round wide eyes
             self._draw_ellipse(face, eye_y, 22, 5, 5, 220, rng)
             self._draw_ellipse(face, eye_y, 42, 5, 5, 220, rng)
             self._draw_ellipse(face, eye_y, 22, 2, 2, 40, rng)
             self._draw_ellipse(face, eye_y, 42, 2, 2, 40, rng)
-            # O-shaped mouth
             self._draw_ellipse(face, mouth_y, 32, 5, 4, 80, rng)
-            self._draw_ellipse(face, mouth_y, 32, 3, 2, 50, rng)  # inner dark
+            self._draw_ellipse(face, mouth_y, 32, 3, 2, 50, rng)
             face_bright += 5
-
-        else:  # neutral — relaxed everything
-            # flat brows
+        else:  # neutral
             self._draw_line(face, eye_y - 6, 17, eye_y - 6, 27, 1, 120)
             self._draw_line(face, eye_y - 6, 37, eye_y - 6, 47, 1, 120)
-            # almond eyes
             self._draw_ellipse(face, eye_y, 22, 3, 5, 200, rng)
             self._draw_ellipse(face, eye_y, 42, 3, 5, 200, rng)
             self._draw_ellipse(face, eye_y, 22, 1, 2, 50, rng)
             self._draw_ellipse(face, eye_y, 42, 1, 2, 50, rng)
-            # straight mouth
             self._draw_line(face, mouth_y, 25, mouth_y, 39, 1, 110)
 
-        # nose (common)
         self._draw_ellipse(face, 34, 32, 2, 2, 140 + rng.uniform(-5, 5), rng)
-
-        # apply global brightness + noise
         face = face + face_bright + rng.normal(0, 3, face.shape)
         face = np.clip(face, 0, 255).astype(np.uint8)
         return face
@@ -242,8 +195,6 @@ class SyntheticFaceDataset(Dataset):
 
 
 class HuggingFaceEmotionDataset(Dataset):
-    """Wraps HuggingFace FER2013 for PyTorch."""
-
     def __init__(self, hf_dataset, transform=None):
         self.dataset = hf_dataset
         self.transform = transform
@@ -264,15 +215,11 @@ class HuggingFaceEmotionDataset(Dataset):
 
 
 class FER2013CSVDataset(Dataset):
-    """Load FER2013 from CSV file."""
-
     def __init__(self, csv_path, split="Training", transform=None):
         import csv as csvmod
-
         self.transform = transform
         self.images = []
         self.labels = []
-
         with open(csv_path) as f:
             reader = csvmod.DictReader(f)
             for row in reader:
@@ -296,10 +243,27 @@ class FER2013CSVDataset(Dataset):
         return img, self.labels[idx]
 
 
+# ── Mixup ──
+
+def mixup_data(x, y, alpha=0.2):
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1.0
+    batch_size = x.size(0)
+    index = torch.randperm(batch_size, device=x.device)
+    mixed_x = lam * x + (1 - lam) * x[index]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
+
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
+
 # ── Training Logic ──
 
-
-def train_one_epoch(model, loader, criterion, optimizer, device):
+def train_one_epoch(model, loader, criterion, optimizer, device, use_mixup=True, mixup_alpha=0.2):
     model.train()
     total_loss = 0.0
     correct = 0
@@ -307,11 +271,19 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
 
     for images, labels in loader:
         images, labels = images.to(device), labels.to(device)
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
+
+        if use_mixup:
+            images, targets_a, targets_b, lam = mixup_data(images, labels, mixup_alpha)
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = mixup_criterion(criterion, outputs, targets_a, targets_b, lam)
+        else:
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
         optimizer.step()
 
         total_loss += loss.item() * images.size(0)
@@ -358,30 +330,82 @@ def evaluate(model, loader, criterion, device):
     }
 
 
-def run_training(train_loader, val_loader, class_weights, device, epochs=35, patience=12):
+@torch.no_grad()
+def evaluate_tta(model, loader, device, num_augments=5):
+    """Test-time augmentation: average predictions over multiple augmented views."""
+    model.eval()
+    correct = 0
+    total = 0
+    all_preds = []
+    all_labels = []
+
+    tta_transform = T.Compose([
+        T.ToPILImage(),
+        T.RandomHorizontalFlip(p=0.5),
+        T.RandomRotation(5),
+        T.ToTensor(),
+        T.Normalize(mean=[0.5], std=[0.5]),
+    ])
+
+    for images, labels in loader:
+        images, labels = images.to(device), labels.to(device)
+        batch_probs = torch.zeros(images.size(0), 7, device=device)
+
+        # original prediction
+        batch_probs += torch.softmax(model(images), dim=1)
+
+        # augmented predictions
+        for _ in range(num_augments - 1):
+            aug_images = torch.stack([tta_transform(img.cpu()) for img in images]).to(device)
+            batch_probs += torch.softmax(model(aug_images), dim=1)
+
+        batch_probs /= num_augments
+        _, predicted = batch_probs.max(1)
+        total += labels.size(0)
+        correct += predicted.eq(labels).sum().item()
+        all_preds.extend(predicted.cpu().tolist())
+        all_labels.extend(labels.cpu().tolist())
+
+    per_class = {}
+    for cls in range(7):
+        mask = [i for i, l in enumerate(all_labels) if l == cls]
+        if mask:
+            cls_correct = sum(1 for i in mask if all_preds[i] == all_labels[i])
+            per_class[cls] = cls_correct / len(mask)
+
+    return {"accuracy": correct / total, "per_class": per_class}
+
+
+def run_training(train_loader, val_loader, class_weights, device, epochs=60, patience=15):
     model = SensAIEmotionCNN(
-        num_classes=7, in_channels=1, dropout=0.4, use_attention=True
+        num_classes=7, in_channels=1, dropout=0.5, use_attention=True
     ).to(device)
 
     params = model.get_param_count()
-    print(f"\nModel: SensAI Emotion CNN")
+    print(f"\nModel: SensAI Emotion CNN v2 (Residual + CBAM)")
     print(f"Parameters: {params['trainable']:,} trainable")
 
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
-    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2)
+    criterion = nn.CrossEntropyLoss(
+        weight=class_weights.to(device),
+        label_smoothing=0.1,
+    )
+    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=5e-4)
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=15, T_mult=2)
 
     best_val_acc = 0.0
     patience_counter = 0
     history = []
 
-    print(f"\nTraining for up to {epochs} epochs...")
-    print("=" * 70)
+    print(f"\nTraining for up to {epochs} epochs (patience={patience})...")
+    print(f"Techniques: Mixup(0.2), LabelSmoothing(0.1), CosineAnnealing, RandomErasing, TTA")
+    print("=" * 80)
 
     for epoch in range(1, epochs + 1):
         start = time.time()
 
-        train_m = train_one_epoch(model, train_loader, criterion, optimizer, device)
+        use_mixup = epoch <= int(epochs * 0.85)
+        train_m = train_one_epoch(model, train_loader, criterion, optimizer, device,
+                                  use_mixup=use_mixup, mixup_alpha=0.2)
         val_m = evaluate(model, val_loader, criterion, device)
         scheduler.step()
 
@@ -408,10 +432,10 @@ def run_training(train_loader, val_loader, class_weights, device, epochs=35, pat
                 "optimizer_state_dict": optimizer.state_dict(),
                 "val_accuracy": best_val_acc,
                 "config": {
-                    "model_type": "sensai_cnn",
+                    "model_type": "sensai_cnn_v2",
                     "num_classes": 7,
                     "in_channels": 1,
-                    "dropout": 0.4,
+                    "dropout": 0.5,
                     "use_attention": True,
                     "img_size": 48,
                 },
@@ -432,16 +456,23 @@ def run_training(train_loader, val_loader, class_weights, device, epochs=35, pat
             print(f"\nEarly stopping (patience={patience})")
             break
 
-    print("=" * 70)
+    print("=" * 80)
     print(f"Best validation accuracy: {best_val_acc:.4f}")
 
     # reload best and evaluate
     best_ckpt = torch.load(OUTPUT_DIR / "best_model.pt", map_location=device, weights_only=True)
     model.load_state_dict(best_ckpt["model_state_dict"])
 
+    print("\nStandard evaluation:")
     final = evaluate(model, val_loader, criterion, device)
-    print(f"\nPer-class accuracy:")
-    for cls, acc in sorted(final["per_class"].items()):
+    print(f"  Accuracy: {final['accuracy']:.4f}")
+
+    print("\nTest-Time Augmentation (5x):")
+    tta = evaluate_tta(model, val_loader, device, num_augments=5)
+    print(f"  TTA Accuracy: {tta['accuracy']:.4f}")
+
+    print(f"\nPer-class accuracy (TTA):")
+    for cls, acc in sorted(tta["per_class"].items()):
         bar = "█" * int(acc * 30)
         print(f"  {EMOTION_LABELS[cls]:12s}: {acc:.4f} {bar}")
 
@@ -453,10 +484,10 @@ def run_training(train_loader, val_loader, class_weights, device, epochs=35, pat
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train SensAI emotion model")
+    parser = argparse.ArgumentParser(description="Train SensAI emotion model v2")
     parser.add_argument("--fer2013", action="store_true", help="Use FER2013 from HuggingFace")
     parser.add_argument("--fer2013-csv", type=str, help="Path to FER2013 CSV file")
-    parser.add_argument("--epochs", type=int, default=35)
+    parser.add_argument("--epochs", type=int, default=60)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -465,12 +496,12 @@ def main():
     train_transform = T.Compose([
         T.Resize((48, 48)),
         T.RandomHorizontalFlip(p=0.5),
-        T.RandomRotation(12),
-        T.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-        T.ColorJitter(brightness=0.2, contrast=0.2),
+        T.RandomRotation(15),
+        T.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.85, 1.15), shear=5),
+        T.ColorJitter(brightness=0.3, contrast=0.3),
         T.ToTensor(),
         T.Normalize(mean=[0.5], std=[0.5]),
-        T.RandomErasing(p=0.15, scale=(0.02, 0.08)),
+        T.RandomErasing(p=0.25, scale=(0.02, 0.15), ratio=(0.3, 3.3)),
     ])
 
     val_transform = T.Compose([
@@ -480,7 +511,6 @@ def main():
     ])
 
     if args.fer2013:
-        # ── Mode 2a: Real FER2013 from HuggingFace ──
         print("\nDownloading FER2013 from HuggingFace...")
         from datasets import load_dataset
         dataset = load_dataset("uoft-cs/fer2013")
@@ -490,7 +520,6 @@ def main():
         print(f"  Train: {len(train_ds)}, Test: {len(val_ds)}")
 
     elif args.fer2013_csv:
-        # ── Mode 2b: Real FER2013 from CSV ──
         print(f"\nLoading FER2013 from {args.fer2013_csv}...")
         full_train = FER2013CSVDataset(args.fer2013_csv, split="Training", transform=train_transform)
         val_ds = FER2013CSVDataset(args.fer2013_csv, split="PublicTest", transform=val_transform)
@@ -499,7 +528,6 @@ def main():
         print(f"  Train: {len(train_ds)}, Test: {len(val_ds)}")
 
     else:
-        # ── Mode 1: Procedural face dataset ──
         print("\nBuilding synthetic face dataset with emotion-specific features...")
         full_ds = SyntheticFaceDataset(num_samples_per_class=1200, transform=train_transform)
 
@@ -510,7 +538,6 @@ def main():
             generator=torch.Generator().manual_seed(42),
         )
 
-        # re-wrap val with val_transform
         class SubsetWithTransform(Dataset):
             def __init__(self, subset, transform):
                 self.subset = subset
@@ -519,8 +546,6 @@ def main():
                 return len(self.subset)
             def __getitem__(self, idx):
                 img_tensor, label = self.subset[idx]
-                # undo the train transform, re-apply val transform
-                # since the base dataset already returns transformed, we just use as-is
                 return img_tensor, label
 
         val_ds = SubsetWithTransform(val_ds_raw, val_transform)
@@ -534,8 +559,8 @@ def main():
     class_weights = 1.0 / class_counts.clamp(min=1)
     class_weights = class_weights / class_weights.sum() * 7
 
-    train_loader = DataLoader(train_ds, batch_size=64, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_ds, batch_size=64, shuffle=False, num_workers=2)
+    train_loader = DataLoader(train_ds, batch_size=64, shuffle=True, num_workers=2, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=64, shuffle=False, num_workers=2, pin_memory=True)
 
     model, best_acc = run_training(train_loader, val_loader, class_weights, device, epochs=args.epochs)
 
@@ -551,9 +576,6 @@ def main():
     print(f"  Checkpoint: {OUTPUT_DIR / 'best_model.pt'}")
     print(f"  ONNX model: {onnx_path}")
     print(f"  Best accuracy: {best_acc:.4f}")
-    print("\nTo retrain on real FER2013 data locally:")
-    print("  pip install datasets")
-    print("  python train_real.py --fer2013")
 
 
 if __name__ == "__main__":

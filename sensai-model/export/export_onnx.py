@@ -32,7 +32,7 @@ def export_to_onnx(
     model_type = config.get("model_type", "sensai_cnn")
     num_classes = config.get("num_classes", 7)
     in_channels = config.get("in_channels", 1)
-    dropout = config.get("dropout", 0.4)
+    dropout = config.get("dropout", 0.5)
     use_attention = config.get("use_attention", True)
     img_size = config.get("img_size", 48)
 
@@ -108,13 +108,13 @@ def verify_onnx(
         model = MobileEmotionNet(
             num_classes=config.get("num_classes", 7),
             in_channels=in_channels,
-            dropout=config.get("dropout", 0.4),
+            dropout=config.get("dropout", 0.5),
         )
     else:
         model = SensAIEmotionCNN(
             num_classes=config.get("num_classes", 7),
             in_channels=in_channels,
-            dropout=config.get("dropout", 0.4),
+            dropout=config.get("dropout", 0.5),
             use_attention=config.get("use_attention", True),
         )
 
