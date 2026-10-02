@@ -144,17 +144,29 @@ export function useEmotionDetection(
     setError(null);
     setDemoMode(false);
 
-    try {
-      const sensai = await loadModel();
+    let stream: MediaStream | null = null;
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 240, facingMode: "user" },
       });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Camera access denied";
+      setError("Camera: " + message);
+      setIsLoading(false);
+      setDemoMode(true);
+      setIsActive(true);
+      return;
+    }
 
+    try {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+
+      const sensai = await loadModel();
 
       setIsActive(true);
       setIsLoading(false);
@@ -192,8 +204,8 @@ export function useEmotionDetection(
       }, interval);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Camera access denied";
-      setError(message);
+        err instanceof Error ? err.message : "Model loading failed";
+      setError("Model: " + message);
       setIsLoading(false);
       setDemoMode(true);
       setIsActive(true);

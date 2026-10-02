@@ -31,6 +31,27 @@ const TOPIC_ICONS: Record<string, string> = {
   math: "📐",
 };
 
+const TUTOR_AGENTS: Record<string, { name: string; emoji: string; gradient: string; tagline: string }> = {
+  python: {
+    name: "Py",
+    emoji: "🐍",
+    gradient: "from-green-500 to-emerald-600",
+    tagline: "Your Python guide",
+  },
+  ai: {
+    name: "Nova",
+    emoji: "✨",
+    gradient: "from-violet-500 to-fuchsia-500",
+    tagline: "Your AI explorer",
+  },
+  math: {
+    name: "Euler",
+    emoji: "📐",
+    gradient: "from-blue-500 to-cyan-500",
+    tagline: "Your math mentor",
+  },
+};
+
 export default function LearnPage() {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [lessonIndex, setLessonIndex] = useState(0);
@@ -157,21 +178,29 @@ export default function LearnPage() {
             </div>
 
             <div className="grid sm:grid-cols-3 gap-4">
-              {TOPICS.map((topic) => (
-                <button
-                  key={topic.id}
-                  onClick={() => selectTopic(topic.id)}
-                  className="glass glass-hover rounded-2xl p-6 text-left space-y-3 transition-all hover:scale-105"
-                >
-                  <span className="text-4xl">
-                    {TOPIC_ICONS[topic.id] || "📚"}
-                  </span>
-                  <h3 className="text-lg font-semibold">{topic.title}</h3>
-                  <p className="text-xs text-gray-500">
-                    {topic.lessonCount} lessons
-                  </p>
-                </button>
-              ))}
+              {TOPICS.map((topic) => {
+                const agent = TUTOR_AGENTS[topic.id];
+                return (
+                  <button
+                    key={topic.id}
+                    onClick={() => selectTopic(topic.id)}
+                    className="glass glass-hover rounded-2xl p-6 text-left space-y-3 transition-all hover:scale-105"
+                  >
+                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${agent?.gradient || "from-sensai-500 to-purple-500"} flex items-center justify-center`}>
+                      <span className="text-2xl">{agent?.emoji || TOPIC_ICONS[topic.id] || "📚"}</span>
+                    </div>
+                    <h3 className="text-lg font-semibold">{topic.title}</h3>
+                    {agent && (
+                      <p className="text-xs text-sensai-400 font-medium">
+                        Agent {agent.name} — {agent.tagline}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-500">
+                      {topic.lessonCount} lessons
+                    </p>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="text-center">
@@ -247,6 +276,7 @@ export default function LearnPage() {
             learningState={learningState}
             onSendMessage={handleSendMessage}
             isThinking={isThinking}
+            agent={selectedTopic ? TUTOR_AGENTS[selectedTopic] : undefined}
           />
         </div>
 

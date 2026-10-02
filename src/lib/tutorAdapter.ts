@@ -125,6 +125,7 @@ export async function generateAIResponse(
         topic: topic.title,
         lessonTitle: lesson.title,
         learningState: state,
+        agentName: AGENT_NAMES[topicId] || "SensAI",
         conversationHistory,
       }),
     });
@@ -296,12 +297,19 @@ export function generateTutorResponse(
   };
 }
 
+const AGENT_NAMES: Record<string, string> = {
+  python: "Py",
+  ai: "Nova",
+  math: "Euler",
+};
+
 export function getWelcomeMessage(topicId: string): ChatMessage {
   const topic = TOPICS[topicId] || TOPICS.python;
+  const agentName = AGENT_NAMES[topicId] || "SensAI";
   return {
     id: crypto.randomUUID(),
     role: "tutor",
-    content: `Welcome to **${topic.title}**! I'm your SensAI tutor.\n\nI'll be watching your facial expressions through the camera to understand how you're feeling. If you look confused, I'll simplify. If you're bored, I'll challenge you more. If you're frustrated, I'll slow down and encourage you.\n\nReady? Let's start with **${topic.lessons[0].title}**.`,
+    content: `Hey! I'm **${agentName}**, your ${topic.title} tutor.\n\nI'll be watching your facial expressions through the camera to understand how you're feeling. If you look confused, I'll simplify. If you're bored, I'll challenge you more. If you're frustrated, I'll slow down and encourage you.\n\nAsk me anything — I'm here to help. Let's start with **${topic.lessons[0].title}**.`,
     timestamp: Date.now(),
   };
 }

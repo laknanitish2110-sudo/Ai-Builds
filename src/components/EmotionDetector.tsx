@@ -104,10 +104,15 @@ export default function EmotionDetector({
           <div className="absolute bottom-2 left-2 right-2">
             <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg px-3 py-2 space-y-1.5">
               <p className="text-xs text-yellow-300">
-                Camera unavailable — using demo mode
+                {error?.startsWith("Camera:") ? "Camera blocked" : "Model loading issue"} — using demo mode
               </p>
               <p className="text-[10px] text-yellow-300/70">
-                Click the 🔒 icon in your address bar → Allow Camera
+                {error?.startsWith("Camera:")
+                  ? "Click the 🔒 icon in your address bar → Allow Camera"
+                  : "Retrying may fix this — the emotion model is loading"}
+              </p>
+              <p className="text-[9px] text-yellow-300/40 truncate">
+                {error}
               </p>
               <button
                 onClick={() => {

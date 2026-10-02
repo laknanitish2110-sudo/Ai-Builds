@@ -3,11 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, LearningState } from "@/types";
 
+interface TutorAgent {
+  name: string;
+  emoji: string;
+  gradient: string;
+}
+
 interface AITutorProps {
   messages: ChatMessage[];
   learningState: LearningState;
   onSendMessage: (message: string) => void;
   isThinking: boolean;
+  agent?: TutorAgent;
 }
 
 const STATE_INDICATORS: Record<
@@ -23,11 +30,18 @@ const STATE_INDICATORS: Record<
   neutral: { label: "Ready", color: "text-gray-400", icon: "📚" },
 };
 
+const DEFAULT_AGENT: TutorAgent = {
+  name: "SensAI Tutor",
+  emoji: "🧠",
+  gradient: "from-sensai-500 to-purple-500",
+};
+
 export default function AITutor({
   messages,
   learningState,
   onSendMessage,
   isThinking,
+  agent = DEFAULT_AGENT,
 }: AITutorProps) {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -49,11 +63,11 @@ export default function AITutor({
     <div className="glass rounded-2xl flex flex-col h-full">
       <div className="flex items-center justify-between p-4 border-b border-white/5">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sensai-500 to-purple-500 flex items-center justify-center">
-            <span className="text-sm">🧠</span>
+          <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${agent.gradient} flex items-center justify-center`}>
+            <span className="text-sm">{agent.emoji}</span>
           </div>
           <div>
-            <h3 className="text-sm font-semibold">SensAI Tutor</h3>
+            <h3 className="text-sm font-semibold">{agent.name}</h3>
             <p className={`text-xs ${indicator.color}`}>
               {indicator.icon} {indicator.label}
             </p>

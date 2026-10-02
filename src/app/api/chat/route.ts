@@ -6,10 +6,17 @@ interface ChatRequestBody {
   topic: string;
   lessonTitle: string;
   learningState: string;
+  agentName: string;
   conversationHistory: { role: string; content: string }[];
 }
 
-const SYSTEM_PROMPT = `You are SensAI, an emotion-aware AI tutor. You teach through conversation — answering questions, explaining concepts, and giving examples.
+const AGENT_PERSONALITIES: Record<string, string> = {
+  Py: "You're Py, a friendly Python programming tutor who loves clean code and practical examples. You use snake_case humor and Python analogies.",
+  Nova: "You're Nova, an AI & machine learning tutor who makes complex concepts feel intuitive. You connect everything to real-world AI applications.",
+  Euler: "You're Euler, a mathematics tutor named after the legendary mathematician. You make math visual and always show your work step by step.",
+};
+
+const BASE_RULES = `You teach through conversation — answering questions, explaining concepts, and giving examples.
 
 Rules:
 - Answer the student's actual question directly and clearly.
@@ -23,7 +30,7 @@ Rules:
 
 export async function POST(req: NextRequest) {
   const body: ChatRequestBody = await req.json();
-  const { message, topic, lessonTitle, learningState, conversationHistory } =
+  const { message, topic, lessonTitle, learningState, agentName, conversationHistory } =
     body;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -54,7 +61,7 @@ export async function POST(req: NextRequest) {
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1024,
-      system: `${SYSTEM_PROMPT}\n\nCurrent topic: ${topic}\nCurrent lesson: ${lessonTitle}${stateContext}`,
+      system: `${AGENT_PERSONALITIES[agentName] || "You're SensAI, an emotion-aware AI tutor."}\n\n${BASE_RULES}\n\nCurrent topic: ${topic}\nCurrent lesson: ${lessonTitle}${stateContext}`,
       messages,
     });
 
