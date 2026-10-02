@@ -10,8 +10,11 @@ import {
   generateEmotionInsight,
 } from "@/lib/emotionEngine";
 import {
+  generateAIResponse,
   generateTutorResponse,
+  getLessonTitle,
   getTopicList,
+  getTopicTitle,
   getWelcomeMessage,
 } from "@/lib/tutorAdapter";
 import type {
@@ -65,7 +68,7 @@ export default function LearnPage() {
   }, [startDetection]);
 
   const handleSendMessage = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (!selectedTopic) return;
 
       const userMsg: ChatMessage = {
@@ -85,8 +88,29 @@ export default function LearnPage() {
         setLessonIndex(nextLessonIndex);
       }
 
-      setTimeout(() => {
-        const stateReading = mapEmotionToLearningState(emotionHistory);
+      const stateReading = mapEmotionToLearningState(emotionHistory);
+      const history = messages
+        .filter((m) => m.role === "user" || m.role === "tutor")
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      try {
+        const { content } = await generateAIResponse(
+          selectedTopic,
+          nextLessonIndex,
+          stateReading.state,
+          text,
+          history
+        );
+
+        const response: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "tutor",
+          content,
+          timestamp: Date.now(),
+          emotionContext: stateReading.state,
+        };
+        setMessages((prev) => [...prev, response]);
+      } catch {
         const response = generateTutorResponse(
           selectedTopic,
           nextLessonIndex,
@@ -95,10 +119,10 @@ export default function LearnPage() {
           text
         );
         setMessages((prev) => [...prev, response]);
-        setIsThinking(false);
-      }, 800 + Math.random() * 1200);
+      }
+      setIsThinking(false);
     },
-    [selectedTopic, lessonIndex, emotionHistory]
+    [selectedTopic, lessonIndex, emotionHistory, messages]
   );
 
   const insight = useMemo(
