@@ -29,7 +29,7 @@ export function useEmotionDetection(
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const faceApiRef = useRef<typeof import("face-api.js") | null>(null);
+  const modelRef = useRef<typeof import("@/lib/sensaiModel") | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isActive, setIsActive] = useState(false);
@@ -103,26 +103,39 @@ export function useEmotionDetection(
     };
   }, [demoMode, isActive, interval, generateDemoEmotion]);
 
-  const loadFaceApi = async () => {
-    if (faceApiRef.current) return faceApiRef.current;
+  const extractFaceRegion = (
+    video: HTMLVideoElement,
+    canvas: HTMLCanvasElement
+  ): ImageData | null => {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
 
-    try {
-      const faceapi = await import("face-api.js");
-      const MODEL_URL =
-        "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/";
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return null;
 
-      await Promise.all([
-        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-        faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-      ]);
+    canvas.width = vw;
+    canvas.height = vh;
+    ctx.drawImage(video, 0, 0, vw, vh);
 
-      faceApiRef.current = faceapi;
-      return faceapi;
-    } catch {
-      throw new Error(
-        "Failed to load face detection models. Check your internet connection."
-      );
-    }
+    const size = Math.min(vw, vh) * 0.6;
+    const cx = vw / 2;
+    const cy = vh * 0.4;
+    const x = Math.max(0, Math.floor(cx - size / 2));
+    const y = Math.max(0, Math.floor(cy - size / 2));
+    const w = Math.min(Math.floor(size), vw - x);
+    const h = Math.min(Math.floor(size), vh - y);
+
+    return ctx.getImageData(x, y, w, h);
+  };
+
+  const loadModel = async () => {
+    if (modelRef.current) return modelRef.current;
+
+    const sensai = await import("@/lib/sensaiModel");
+    await sensai.loadModel();
+    modelRef.current = sensai;
+    return sensai;
   };
 
   const startDetection = async () => {
@@ -131,7 +144,7 @@ export function useEmotionDetection(
     setError(null);
 
     try {
-      const faceapi = await loadFaceApi();
+      const sensai = await loadModel();
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 240, facingMode: "user" },
@@ -146,26 +159,15 @@ export function useEmotionDetection(
       setIsLoading(false);
 
       intervalRef.current = setInterval(async () => {
-        if (!videoRef.current) return;
+        if (!videoRef.current || !canvasRef.current) return;
 
-        const detections = await faceapi
-          .detectSingleFace(
-            videoRef.current,
-            new faceapi.TinyFaceDetectorOptions()
-          )
-          .withFaceExpressions();
+        const faceData = extractFaceRegion(
+          videoRef.current,
+          canvasRef.current
+        );
 
-        if (detections) {
-          const expressions = detections.expressions;
-          const emotions: Record<EmotionLabel, number> = {
-            happy: expressions.happy,
-            sad: expressions.sad,
-            angry: expressions.angry,
-            surprised: expressions.surprised,
-            fearful: expressions.fearful,
-            disgusted: expressions.disgusted,
-            neutral: expressions.neutral,
-          };
+        if (faceData) {
+          const emotions = await sensai.predict(faceData);
 
           let dominant: EmotionLabel = "neutral";
           let maxVal = 0;

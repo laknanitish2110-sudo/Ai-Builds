@@ -18,3 +18,6 @@ build/
 sensai-model/checkpoints/*.pt
 sensai-model/export/*.onnx
 sensai-model/export/*.onnx.data
+
+# WASM runtime (copied from node_modules at install)
+public/models/*.wasm
