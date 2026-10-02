@@ -61,7 +61,8 @@ export default function LearnPage() {
     setLessonIndex(0);
     const welcome = getWelcomeMessage(topicId);
     setMessages([welcome]);
-  }, []);
+    startDetection();
+  }, [startDetection]);
 
   const handleSendMessage = useCallback(
     (text: string) => {

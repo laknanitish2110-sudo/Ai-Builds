@@ -102,10 +102,21 @@ export default function EmotionDetector({
 
         {error && (
           <div className="absolute bottom-2 left-2 right-2">
-            <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg px-3 py-2">
+            <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-lg px-3 py-2 space-y-1.5">
               <p className="text-xs text-yellow-300">
                 Camera unavailable — using demo mode
               </p>
+              <p className="text-[10px] text-yellow-300/70">
+                Click the 🔒 icon in your address bar → Allow Camera
+              </p>
+              <button
+                onClick={() => {
+                  onStart();
+                }}
+                className="w-full text-[11px] py-1 rounded bg-yellow-500/30 hover:bg-yellow-500/50 text-yellow-200 transition"
+              >
+                Retry Camera
+              </button>
             </div>
           </div>
         )}

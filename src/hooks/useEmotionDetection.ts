@@ -142,6 +142,7 @@ export function useEmotionDetection(
     if (!enabled) return;
     setIsLoading(true);
     setError(null);
+    setDemoMode(false);
 
     try {
       const sensai = await loadModel();
